@@ -1,3 +1,4 @@
+import { WebsiteLogo } from './WebsiteLogo';
 import React, { useState } from 'react';
 import { 
   Search, 
@@ -18,7 +19,11 @@ import {
   List,
   ChevronDown,
   ChevronRight,
-  Globe
+  Globe,
+  Edit3,
+  Save,
+  AlertCircle,
+  Trash2
 } from 'lucide-react';
 import { DocumentEntry, AppSettings, PostStatus } from '../types';
 
@@ -45,7 +50,88 @@ export const DocumentList: React.FC<DocumentListProps> = ({
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [selectedDoc, setSelectedDoc] = useState<DocumentEntry | null>(null);
 
+  // Edit state
+  const [editingDoc, setEditingDoc] = useState<DocumentEntry | null>(null);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editMessage, setEditMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteConfirmDoc, setDeleteConfirmDoc] = useState<DocumentEntry | null>(null);
+  const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   const sheetUrl = `https://docs.google.com/spreadsheets/d/${settings.spreadsheetId}/edit`;
+
+  const showToast = (text: string, type: 'success' | 'error' = 'success') => {
+    setToastMessage({ type, text });
+    setTimeout(() => {
+      setToastMessage(prev => prev?.text === text ? null : prev);
+    }, 3500);
+  };
+
+  const confirmAndDeleteDoc = async (doc: DocumentEntry) => {
+    setDeletingId(doc.id);
+    try {
+      const res = await fetch(`/api/documents/${doc.id}`, {
+        method: 'DELETE'
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(data.message || 'Akun berhasil dihapus!');
+        if (selectedDoc?.id === doc.id) {
+          setSelectedDoc(null);
+        }
+        setDeleteConfirmDoc(null);
+        onRefresh();
+      } else {
+        showToast(data.message || 'Gagal menghapus akun.', 'error');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Gagal menghubungi server untuk menghapus akun.', 'error');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleStartEdit = (doc: DocumentEntry) => {
+    setEditingDoc({ ...doc });
+    setEditMessage(null);
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingDoc) return;
+
+    if (!editingDoc.idReff.trim()) {
+      setEditMessage({ type: 'error', text: 'ID REFF tidak boleh kosong.' });
+      return;
+    }
+
+    setIsSavingEdit(true);
+    setEditMessage(null);
+
+    try {
+      const res = await fetch(`/api/documents/${editingDoc.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editingDoc)
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setEditMessage({ type: 'success', text: data.message || 'Akun berhasil diperbarui & disinkronkan ke Google Sheet!' });
+        setTimeout(() => {
+          setEditingDoc(null);
+          setEditMessage(null);
+          onRefresh();
+        }, 1200);
+      } else {
+        setEditMessage({ type: 'error', text: data.message || 'Gagal memperbarui akun.' });
+      }
+    } catch (err: any) {
+      setEditMessage({ type: 'error', text: err.message || 'Gagal menghubungi server untuk update.' });
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
 
   // Extract unique ID REFF list and Website list for filter dropdowns
   const idReffList = Array.from(new Set(entries.map(e => e.idReff).filter(Boolean))).sort();
@@ -89,32 +175,21 @@ export const DocumentList: React.FC<DocumentListProps> = ({
 
   const getWebsiteBadge = (website?: string) => {
     const web = (website || 'studiobet78').toLowerCase();
-    switch (web) {
-      case 'studiobet78':
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">🟢 studiobet78</span>;
-      case 'bigbet78':
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">🔵 bigbet78</span>;
-      case 'piala45':
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">🟡 piala45</span>;
-      case 'bambu189':
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">🟣 bambu189</span>;
-      default:
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-800 border border-slate-200">🎰 {website}</span>;
-    }
+    return (
+      <span className="px-2 py-1 rounded-md border border-slate-200 bg-white shadow-sm flex items-center justify-center w-24">
+        <WebsiteLogo website={web} className="h-4 object-contain" />
+      </span>
+    );
   };
 
   const getStatusBadge = (status: PostStatus | string) => {
     switch (status) {
       case 'Dipublikasikan':
         return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 flex items-center gap-1 w-fit"><CheckCircle2 className="w-3 h-3 text-emerald-600" /> Dipublikasikan</span>;
-      case 'Pending':
-        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 flex items-center gap-1 w-fit"><Clock className="w-3 h-3 text-amber-600" /> Pending</span>;
-      case 'Scheduled':
-        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-cyan-100 text-cyan-800 flex items-center gap-1 w-fit"><Calendar className="w-3 h-3 text-cyan-600" /> Terjadwal</span>;
-      case 'Gagal':
-        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 flex items-center gap-1 w-fit"><XCircle className="w-3 h-3 text-rose-600" /> Gagal</span>;
+      case 'Ditangguhkan':
+        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 flex items-center gap-1 w-fit"><Clock className="w-3 h-3 text-amber-600" /> Ditangguhkan</span>;
       default:
-        return <span className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-100 text-slate-700 flex items-center gap-1 w-fit">Draft</span>;
+        return <span className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-100 text-slate-700 flex items-center gap-1 w-fit">{status}</span>;
     }
   };
 
@@ -124,10 +199,10 @@ export const DocumentList: React.FC<DocumentListProps> = ({
         return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-pink-100 text-pink-800 border border-pink-200">INSTAGRAM</span>;
       case 'TIKTOK':
         return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-900 text-white">TIKTOK</span>;
-      case 'YOUTUBE':
-        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800 border border-red-200">YOUTUBE</span>;
-      case 'FACEBOOK':
-        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">FACEBOOK</span>;
+      case 'FANSPAGE FB':
+        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">FANSPAGE FB</span>;
+      case 'FACEBOOK PRO':
+        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">FACEBOOK PRO</span>;
       default:
         return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-800">{platform}</span>;
     }
@@ -143,10 +218,10 @@ export const DocumentList: React.FC<DocumentListProps> = ({
           <div>
             <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
               <FileText className="w-5 h-5 text-emerald-600" />
-              Riwayat Entri Postingan Konten
+              Riwayat Entri Akun
             </h2>
             <p className="text-xs text-slate-500">
-              Total <strong className="text-slate-800">{filteredEntries.length}</strong> entri postingan ({Object.keys(groupedEntries).length} ID REFF)
+              Total <strong className="text-slate-800">{filteredEntries.length}</strong> entri akun ({Object.keys(groupedEntries).length} ID REFF)
             </p>
           </div>
 
@@ -220,7 +295,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({
           >
             <option value="ALL">🌐 Semua Web</option>
             {websiteList.map(web => (
-              <option key={web} value={web}>🎰 {web}</option>
+              <option key={web} value={web}>🌐 {web}</option>
             ))}
           </select>
 
@@ -245,11 +320,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({
             <option value="ALL">Semua Platform</option>
             <option value="INSTAGRAM">INSTAGRAM</option>
             <option value="TIKTOK">TIKTOK</option>
-            <option value="YOUTUBE">YOUTUBE</option>
-            <option value="FACEBOOK">FACEBOOK</option>
-            <option value="X / TWITTER">X / TWITTER</option>
-            <option value="THREADS">THREADS</option>
-            <option value="OTHER">OTHER</option>
+            <option value="FANSPAGE FB">FANSPAGE FB</option>
+            <option value="FACEBOOK PRO">FACEBOOK PRO</option>
           </select>
 
           {/* Konten Filter */}
@@ -260,12 +332,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({
           >
             <option value="ALL">Semua Jenis Konten</option>
             <option value="BRANDING">BRANDING</option>
-            <option value="PROMOSI">PROMOSI</option>
-            <option value="ENDORSEMENT">ENDORSEMENT</option>
-            <option value="EDUKASI">EDUKASI</option>
-            <option value="ENTERTAINMENT">ENTERTAINMENT</option>
-            <option value="ORGANIC">ORGANIC</option>
-            <option value="REVIEW">REVIEW</option>
+            <option value="OVERLAY">OVERLAY</option>
           </select>
 
           {/* Status Filter */}
@@ -276,10 +343,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({
           >
             <option value="ALL">Semua Status</option>
             <option value="Dipublikasikan">Dipublikasikan</option>
-            <option value="Pending">Pending</option>
-            <option value="Scheduled">Scheduled / Terjadwal</option>
-            <option value="Draft">Draft</option>
-            <option value="Gagal">Gagal</option>
+            <option value="Ditangguhkan">Ditangguhkan</option>
           </select>
 
         </div>
@@ -289,7 +353,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({
       {/* Main Content Area */}
       {filteredEntries.length === 0 ? (
         <div className="bg-white p-12 rounded-2xl border border-slate-200 text-center text-sm text-slate-500">
-          Tidak ada data postingan yang sesuai kriteria pencarian atau filter.
+          Tidak ada data akun yang sesuai kriteria pencarian atau filter.
         </div>
       ) : groupByReff ? (
         /* GROUPED BY ID REFF VIEW */
@@ -314,7 +378,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({
                       <span className="font-mono text-base font-extrabold text-slate-900">{reff}</span>
                     </div>
                     <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold border border-emerald-200">
-                      {groupItems.length} Postingan
+                      {groupItems.length} Akun
                     </span>
                   </div>
 
@@ -337,7 +401,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({
                           <th className="py-2.5 px-4">Konten (Kolom A)</th>
                           <th className="py-2.5 px-4">Platform (Kolom B)</th>
                           <th className="py-2.5 px-4">Status (Kolom D)</th>
-                          <th className="py-2.5 px-4">Tanggal Postingan</th>
+                          <th className="py-2.5 px-4">Tanggal Akun</th>
                           <th className="py-2.5 px-4">Link & Catatan</th>
                           <th className="py-2.5 px-4 text-right">Aksi</th>
                         </tr>
@@ -375,13 +439,22 @@ export const DocumentList: React.FC<DocumentListProps> = ({
                               )}
                             </td>
                             <td className="py-3 px-4 text-right">
-                              <button
-                                onClick={() => setSelectedDoc(entry)}
-                                className="p-1.5 rounded-lg text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 transition"
-                                title="Lihat Detail"
-                              >
-                                <Eye className="w-4 h-4" />
-                              </button>
+                              <div className="flex items-center justify-end gap-1">
+                                <button
+                                  onClick={() => setSelectedDoc(entry)}
+                                  className="p-1.5 rounded-lg text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 transition"
+                                  title="Lihat Detail"
+                                >
+                                  <Eye className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => handleStartEdit(entry)}
+                                  className="p-1.5 rounded-lg text-slate-500 hover:text-cyan-700 hover:bg-cyan-50 transition"
+                                  title="Edit Akun"
+                                >
+                                  <Edit3 className="w-4 h-4" />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -405,7 +478,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({
                     <th className="py-3 px-4">Platform (Kolom B)</th>
                     <th className="py-3 px-4">ID REFF (Kolom C)</th>
                     <th className="py-3 px-4">Status (Kolom D)</th>
-                    <th className="py-3 px-4">Tanggal Postingan</th>
+                    <th className="py-3 px-4">Tanggal Akun</th>
                     <th className="py-3 px-4">Link / Catatan</th>
                     <th className="py-3 px-4 text-right">Aksi</th>
                   </tr>
@@ -445,13 +518,22 @@ export const DocumentList: React.FC<DocumentListProps> = ({
                         )}
                       </td>
                       <td className="py-3 px-4 text-right">
-                        <button
-                          onClick={() => setSelectedDoc(entry)}
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 transition"
-                          title="Lihat Detail"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => setSelectedDoc(entry)}
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 transition"
+                            title="Lihat Detail"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleStartEdit(entry)}
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-cyan-700 hover:bg-cyan-50 transition"
+                            title="Edit Akun"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -477,7 +559,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({
 
                 <div className="bg-slate-50 p-2.5 rounded-xl space-y-1 text-xs text-slate-700">
                   <div>
-                    <span className="text-[10px] text-slate-400 block font-semibold">Tanggal Postingan:</span>
+                    <span className="text-[10px] text-slate-400 block font-semibold">Tanggal Akun:</span>
                     <span className="font-mono font-medium text-slate-800">{entry.tanggalPostingan || '-'}</span>
                   </div>
                   <div>
@@ -486,26 +568,36 @@ export const DocumentList: React.FC<DocumentListProps> = ({
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between pt-1">
+                <div className="flex items-center justify-between pt-2 border-t border-slate-100 gap-2">
                   {entry.linkKonten ? (
                     <a
                       href={entry.linkKonten}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-xs font-semibold text-cyan-700 hover:underline"
+                      className="inline-flex items-center gap-1 text-xs font-semibold text-cyan-700 hover:underline truncate max-w-[120px]"
                     >
-                      <Link2 className="w-3.5 h-3.5" /> Buka Link Konten
+                      <Link2 className="w-3.5 h-3.5 shrink-0" /> Link
                     </a>
                   ) : (
                     <span className="text-[11px] text-slate-400">Tanpa Link</span>
                   )}
 
-                  <button
-                    onClick={() => setSelectedDoc(entry)}
-                    className="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 text-xs font-bold hover:bg-emerald-100 transition flex items-center gap-1"
-                  >
-                    <Eye className="w-3.5 h-3.5" /> Detail
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => setSelectedDoc(entry)}
+                      className="px-2.5 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 text-xs font-bold hover:bg-emerald-100 transition flex items-center gap-1"
+                      title="Lihat Detail"
+                    >
+                      <Eye className="w-3.5 h-3.5" /> Detail
+                    </button>
+                    <button
+                      onClick={() => handleStartEdit(entry)}
+                      className="px-2.5 py-1.5 rounded-xl bg-cyan-50 text-cyan-700 text-xs font-bold hover:bg-cyan-100 transition flex items-center gap-1"
+                      title="Edit Akun"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" /> Edit
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -553,13 +645,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({
                   {getStatusBadge(selectedDoc.status)}
                 </div>
                 <div className="col-span-2">
-                  <span className="text-[10px] text-slate-400 block uppercase font-bold">Tanggal Postingan (Kolom E)</span>
+                  <span className="text-[10px] text-slate-400 block uppercase font-bold">Tanggal Akun (Kolom E)</span>
                   <span className="font-mono font-semibold text-slate-900">{selectedDoc.tanggalPostingan}</span>
                 </div>
               </div>
 
               <div>
-                <span className="text-[10px] text-slate-400 block uppercase font-bold mb-1">LINK KONTEN (Kolom F)</span>
+                <span className="text-[10px] text-slate-400 block uppercase font-bold mb-1">LINK PROFIL (Kolom F)</span>
                 {selectedDoc.linkKonten ? (
                   <a
                     href={selectedDoc.linkKonten}
@@ -571,12 +663,12 @@ export const DocumentList: React.FC<DocumentListProps> = ({
                     {selectedDoc.linkKonten}
                   </a>
                 ) : (
-                  <p className="text-slate-400 italic">Tidak ada link konten.</p>
+                  <p className="text-slate-400 italic">Tidak ada link profil.</p>
                 )}
               </div>
 
               <div>
-                <span className="text-[10px] text-slate-400 block uppercase font-bold mb-1">CATATAN (Kolom G)</span>
+                <span className="text-[10px] text-slate-400 block uppercase font-bold mb-1">CATATAN / Tanggal Mulai (Kolom G)</span>
                 <p className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-slate-800 whitespace-pre-wrap">
                   {selectedDoc.catatan || 'Tidak ada catatan.'}
                 </p>
@@ -589,7 +681,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({
 
             </div>
 
-            <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
               <a
                 href={sheetUrl}
                 target="_blank"
@@ -599,17 +691,244 @@ export const DocumentList: React.FC<DocumentListProps> = ({
                 <FileSpreadsheet className="w-3.5 h-3.5" /> Buka di Google Sheet
               </a>
 
-              <button
-                onClick={() => setSelectedDoc(null)}
-                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs"
-              >
-                Tutup
-              </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => {
+                    const docToEdit = selectedDoc;
+                    setSelectedDoc(null);
+                    handleStartEdit(docToEdit);
+                  }}
+                  className="px-3 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs transition flex items-center gap-1.5"
+                >
+                  <Edit3 className="w-3.5 h-3.5" /> Edit Akun
+                </button>
+
+                <button
+                  onClick={() => setSelectedDoc(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs"
+                >
+                  Tutup
+                </button>
+              </div>
             </div>
 
           </div>
         </div>
       )}
+
+      {/* Edit Document Modal */}
+      {editingDoc && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-xl border border-slate-200 max-h-[90vh] overflow-y-auto space-y-4 animate-scale-up">
+            
+            <div className="flex items-start justify-between border-b border-slate-100 pb-3">
+              <div>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-100 text-cyan-800">
+                  {editingDoc.id}
+                </span>
+                <h3 className="text-lg font-bold text-slate-900 mt-1 flex items-center gap-2">
+                  <Edit3 className="w-5 h-5 text-cyan-600" /> Edit &amp; Update Data Akun
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Perubahan akan langsung disimpan dan disinkronkan ke Google Sheet &amp; Database Local.
+                </p>
+              </div>
+              <button
+                onClick={() => setEditingDoc(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Edit Alert Feedback */}
+            {editMessage && (
+              <div className={`p-3 rounded-xl border text-xs flex items-center gap-2 ${
+                editMessage.type === 'success' 
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-900 font-medium' 
+                  : 'bg-rose-50 border-rose-200 text-rose-900 font-medium'
+              }`}>
+                {editMessage.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                )}
+                <span>{editMessage.text}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveEdit} className="space-y-4 text-xs">
+              
+              {/* Target Website */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Target Website / Tab Sheet
+                </label>
+                <select
+                  value={editingDoc.website || 'studiobet78'}
+                  onChange={e => setEditingDoc(prev => prev ? ({ ...prev, website: e.target.value }) : null)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm font-semibold text-slate-900 outline-none focus:border-cyan-500 bg-white"
+                >
+                  <option value="studiobet78">🌐 studiobet78</option>
+                  <option value="bigbet78">🌐 bigbet78</option>
+                  <option value="piala45">🌐 piala45</option>
+                  <option value="bambu189">🌐 bambu189</option>
+                </select>
+              </div>
+
+              {/* Grid 2 Cols: Konten & Platform */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Jenis Konten (Kolom A)
+                  </label>
+                  <select
+                    value={editingDoc.konten}
+                    onChange={e => setEditingDoc(prev => prev ? ({ ...prev, konten: e.target.value as any }) : null)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm font-semibold text-slate-900 outline-none focus:border-cyan-500 bg-white"
+                  >
+                    <option value="BRANDING">BRANDING</option>
+                    <option value="OVERLAY">OVERLAY</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    PLATFORM (Kolom B)
+                  </label>
+                  <select
+                    value={editingDoc.platform}
+                    onChange={e => setEditingDoc(prev => prev ? ({ ...prev, platform: e.target.value as any }) : null)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm font-semibold text-slate-900 outline-none focus:border-cyan-500 bg-white"
+                  >
+                    <option value="INSTAGRAM">INSTAGRAM</option>
+                    <option value="TIKTOK">TIKTOK</option>
+                    <option value="FANSPAGE FB">FANSPAGE FB</option>
+                    <option value="FACEBOOK PRO">FACEBOOK PRO</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Grid 2 Cols: ID REFF & Status */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    ID REFF (Kolom C)
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editingDoc.idReff}
+                    onChange={e => setEditingDoc(prev => prev ? ({ ...prev, idReff: e.target.value }) : null)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm font-mono font-bold text-slate-900 outline-none focus:border-cyan-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Status (Kolom D)
+                  </label>
+                  <select
+                    value={editingDoc.status}
+                    onChange={e => setEditingDoc(prev => prev ? ({ ...prev, status: e.target.value as any }) : null)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm font-semibold text-slate-900 outline-none focus:border-cyan-500 bg-white"
+                  >
+                    <option value="Dipublikasikan">✅ Dipublikasikan</option>
+                    <option value="Ditangguhkan">⏸️ Ditangguhkan</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Grid 2 Cols: Tanggal Akun & Link Profil */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Tanggal Akun (Kolom E)
+                  </label>
+                  <input
+                    type="text"
+                    value={editingDoc.tanggalPostingan}
+                    onChange={e => setEditingDoc(prev => prev ? ({ ...prev, tanggalPostingan: e.target.value }) : null)}
+                    placeholder="26/07/2026"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm font-mono text-slate-900 outline-none focus:border-cyan-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    LINK PROFIL (Kolom F)
+                  </label>
+                  <input
+                    type="url"
+                    value={editingDoc.linkKonten}
+                    onChange={e => setEditingDoc(prev => prev ? ({ ...prev, linkKonten: e.target.value }) : null)}
+                    placeholder="https://..."
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm text-slate-900 outline-none focus:border-cyan-500"
+                  />
+                </div>
+              </div>
+
+              {/* Catatan (Kolom G) */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  CATATAN / Tanggal Mulai (Kolom G)
+                </label>
+                <textarea
+                  rows={3}
+                  value={editingDoc.catatan}
+                  onChange={e => setEditingDoc(prev => prev ? ({ ...prev, catatan: e.target.value }) : null)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm text-slate-900 outline-none focus:border-cyan-500 resize-none"
+                />
+              </div>
+
+              {/* Modal Footer Buttons */}
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingDoc(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs"
+                >
+                  Batal
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={isSavingEdit}
+                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-600 hover:from-cyan-500 hover:to-teal-500 text-white font-semibold text-xs shadow-md shadow-cyan-600/20 transition flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {isSavingEdit ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      Menyimpan...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-3.5 h-3.5" />
+                      Simpan &amp; Update ke Sheet
+                    </>
+                  )}
+                </button>
+              </div>
+
+            </form>
+
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className={`fixed bottom-6 right-6 z-50 px-4 py-3 rounded-2xl shadow-xl border flex items-center gap-2 text-xs font-bold animate-slide-up ${
+          toastMessage.type === 'success' 
+            ? 'bg-emerald-900 text-emerald-100 border-emerald-700' 
+            : 'bg-rose-900 text-rose-100 border-rose-700'
+        }`}>
+          {toastMessage.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <X className="w-4 h-4 text-rose-400" />}
+          <span>{toastMessage.text}</span>
+        </div>
+      )}
+
+      {/* Toast Notification */}
 
     </div>
   );

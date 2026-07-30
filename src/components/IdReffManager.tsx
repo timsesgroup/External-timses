@@ -1,3 +1,4 @@
+import { WebsiteLogo } from './WebsiteLogo';
 import React, { useState } from 'react';
 import { 
   User, 
@@ -68,9 +69,16 @@ export const IdReffManager: React.FC<IdReffManagerProps> = ({
 
   // Delete Single Post Entry State
   const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
+  const [deleteConfirmEntry, setDeleteConfirmEntry] = useState<DocumentEntry | null>(null);
 
-  // Expanded ID REFF cards
+  // Expanded ID REFF cards - Default to expanded so users immediately see content, platform, edit & delete buttons
   const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({});
+
+  const isIdExpanded = (id: string) => expandedIds[id] !== false;
+
+  const toggleExpand = (id: string) => {
+    setExpandedIds(prev => ({ ...prev, [id]: !isIdExpanded(id) }));
+  };
 
   // Websites list
   const knownWebsites = ['studiobet78', 'bigbet78', 'piala45', 'bambu189'];
@@ -103,10 +111,6 @@ export const IdReffManager: React.FC<IdReffManagerProps> = ({
       (item.website || '').toLowerCase().includes(searchTerm.toLowerCase())
     )
   );
-
-  const toggleExpand = (id: string) => {
-    setExpandedIds(prev => ({ ...prev, [id]: !prev[id] }));
-  };
 
   // Handle Add ID REFF
   const handleAddIdReff = async (e: React.FormEvent) => {
@@ -216,35 +220,34 @@ export const IdReffManager: React.FC<IdReffManagerProps> = ({
 
       const data = await res.json();
       if (data.success) {
-        showToast('Data postingan berhasil diperbarui!');
+        showToast('Data akun berhasil diperbarui!');
         setEditingEntry(null);
         onRefreshAll();
       } else {
-        showToast(data.message || 'Gagal menyimpan perubahan postingan.', 'error');
+        showToast(data.message || 'Gagal menyimpan perubahan akun.', 'error');
       }
     } catch (err: any) {
-      showToast(err.message || 'Gagal memperbarui postingan.', 'error');
+      showToast(err.message || 'Gagal memperbarui akun.', 'error');
     } finally {
       setIsSavingEntry(false);
     }
   };
 
   // Handle Delete Single Document Entry
-  const handleDeleteSingleEntry = async (entryId: string) => {
-    if (!confirm('Apakah Anda yakin ingin menghapus data postingan ini?')) return;
-
-    setDeletingEntryId(entryId);
+  const handleDeleteSingleEntry = async (entry: DocumentEntry) => {
+    setDeletingEntryId(entry.id);
     try {
-      const res = await fetch(`/api/documents/${entryId}`, {
+      const res = await fetch(`/api/documents/${entry.id}`, {
         method: 'DELETE'
       });
 
       const data = await res.json();
       if (data.success) {
-        showToast('Postingan berhasil dihapus!');
+        showToast('Akun berhasil dihapus!');
+        setDeleteConfirmEntry(null);
         onRefreshAll();
       } else {
-        showToast(data.message || 'Gagal menghapus postingan.', 'error');
+        showToast(data.message || 'Gagal menghapus akun.', 'error');
       }
     } catch (err: any) {
       showToast(err.message || 'Gagal terhubung ke server.', 'error');
@@ -255,18 +258,11 @@ export const IdReffManager: React.FC<IdReffManagerProps> = ({
 
   const getWebsiteBadge = (website?: string) => {
     const web = (website || 'studiobet78').toLowerCase();
-    switch (web) {
-      case 'studiobet78':
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">🟢 studiobet78</span>;
-      case 'bigbet78':
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">🔵 bigbet78</span>;
-      case 'piala45':
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">🟡 piala45</span>;
-      case 'bambu189':
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">🟣 bambu189</span>;
-      default:
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-800 border border-slate-200">🎰 {website}</span>;
-    }
+    return (
+      <span className="px-2 py-1 rounded-md border border-slate-200 bg-white shadow-sm flex items-center justify-center w-24">
+        <WebsiteLogo website={web} className="h-4 object-contain" />
+      </span>
+    );
   };
 
   const getPlatformBadge = (platform: string) => {
@@ -275,10 +271,10 @@ export const IdReffManager: React.FC<IdReffManagerProps> = ({
         return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-pink-100 text-pink-800 border border-pink-200">INSTAGRAM</span>;
       case 'TIKTOK':
         return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-900 text-white">TIKTOK</span>;
-      case 'YOUTUBE':
-        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800 border border-red-200">YOUTUBE</span>;
-      case 'FACEBOOK':
-        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">FACEBOOK</span>;
+      case 'FANSPAGE FB':
+        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">FANSPAGE FB</span>;
+      case 'FACEBOOK PRO':
+        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">FACEBOOK PRO</span>;
       default:
         return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-800">{platform}</span>;
     }
@@ -292,14 +288,14 @@ export const IdReffManager: React.FC<IdReffManagerProps> = ({
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
             <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-xs font-bold uppercase tracking-wide">
-              Manajemen ID REFF &amp; Postingan
+              Manajemen ID REFF &amp; Akun
             </span>
             <h1 className="text-2xl sm:text-3xl font-extrabold mt-2 flex items-center gap-2.5">
               <User className="w-7 h-7 text-emerald-400" />
               Kelola ID REFF &amp; Sosial Media Per Web
             </h1>
             <p className="text-xs sm:text-sm text-emerald-100/80 max-w-2xl mt-1">
-              Filter data berdasarkan website/tab (studiobet78, bigbet78, piala45, bambu189), tambahkan ID REFF baru, atau kelola postingan sosial media.
+              Filter data berdasarkan website/tab (studiobet78, bigbet78, piala45, bambu189), tambahkan ID REFF baru, atau kelola akun sosial media.
             </p>
           </div>
 
@@ -346,7 +342,7 @@ export const IdReffManager: React.FC<IdReffManagerProps> = ({
                     : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                 }`}
               >
-                <span>🎰 {web}</span>
+                <WebsiteLogo website={web} className="h-5 object-contain" />
                 <span className={`text-[10px] px-2 py-0.5 rounded-full ${
                   selectedWebFilter.toLowerCase() === web.toLowerCase() ? 'bg-black/20 text-white' : 'bg-slate-200 text-slate-800'
                 }`}>
@@ -365,12 +361,12 @@ export const IdReffManager: React.FC<IdReffManagerProps> = ({
           <h2>Tambah ID REFF Baru</h2>
         </div>
 
-        <form onSubmit={handleAddIdReff} className="grid grid-cols-1 sm:grid-cols-5 gap-4">
+        <form onSubmit={handleAddIdReff} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           
           {/* Target Website */}
-          <div className="sm:col-span-1 space-y-1">
+          <div className="space-y-1">
             <label className="text-xs font-bold text-slate-700 block">
-              Target Website <span className="text-rose-500">*</span>
+              Pilih Target Website <span className="text-rose-500">*</span>
             </label>
             <select
               value={newWebsite}
@@ -378,15 +374,15 @@ export const IdReffManager: React.FC<IdReffManagerProps> = ({
               className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-bold text-emerald-800 bg-emerald-50/50 focus:border-emerald-500 outline-none transition"
             >
               {websiteList.map(web => (
-                <option key={web} value={web}>🎰 {web}</option>
+                <option key={web} value={web}>🌐 {web}</option>
               ))}
             </select>
           </div>
 
           {/* Input ID REFF */}
-          <div className="sm:col-span-1 space-y-1">
+          <div className="space-y-1">
             <label className="text-xs font-bold text-slate-700 block">
-              ID REFF (Kode Pengguna / Ref) <span className="text-rose-500">*</span>
+              Input ID REFF <span className="text-rose-500">*</span>
             </label>
             <input
               type="text"
@@ -398,44 +394,8 @@ export const IdReffManager: React.FC<IdReffManagerProps> = ({
             />
           </div>
 
-          {/* Select Default Platform */}
-          <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-700 block">Default Platform</label>
-            <select
-              value={newPlatform}
-              onChange={e => setNewPlatform(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs text-slate-900 font-medium bg-white focus:border-emerald-500 outline-none transition"
-            >
-              <option value="INSTAGRAM">INSTAGRAM</option>
-              <option value="TIKTOK">TIKTOK</option>
-              <option value="YOUTUBE">YOUTUBE</option>
-              <option value="FACEBOOK">FACEBOOK</option>
-              <option value="X / TWITTER">X / TWITTER</option>
-              <option value="THREADS">THREADS</option>
-              <option value="OTHER">OTHER</option>
-            </select>
-          </div>
-
-          {/* Select Default Konten */}
-          <div className="space-y-1">
-            <label className="text-xs font-bold text-slate-700 block">Default Jenis Konten</label>
-            <select
-              value={newKonten}
-              onChange={e => setNewKonten(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs text-slate-900 font-medium bg-white focus:border-emerald-500 outline-none transition"
-            >
-              <option value="BRANDING">BRANDING</option>
-              <option value="PROMOSI">PROMOSI</option>
-              <option value="ENDORSEMENT">ENDORSEMENT</option>
-              <option value="EDUKASI">EDUKASI</option>
-              <option value="ENTERTAINMENT">ENTERTAINMENT</option>
-              <option value="ORGANIC">ORGANIC</option>
-              <option value="REVIEW">REVIEW</option>
-            </select>
-          </div>
-
           {/* Button Submit */}
-          <div className="sm:col-span-1 flex items-end">
+          <div className="flex items-end">
             <button
               type="submit"
               disabled={isAdding}
@@ -481,7 +441,7 @@ export const IdReffManager: React.FC<IdReffManagerProps> = ({
         <div className="space-y-4">
           {filteredIds.map(id => {
             const items = idReffMap[id] || [];
-            const isExpanded = expandedIds[id];
+            const isExpanded = isIdExpanded(id);
             const platforms = Array.from(new Set(items.map(i => i.platform)));
 
             return (
@@ -493,22 +453,23 @@ export const IdReffManager: React.FC<IdReffManagerProps> = ({
                   <div className="flex items-center gap-3">
                     <button
                       onClick={() => toggleExpand(id)}
-                      className="p-1.5 rounded-xl bg-white border border-slate-200 text-slate-500 hover:text-slate-900 transition"
+                      className="p-2 rounded-xl bg-white border border-slate-200 text-slate-700 hover:text-slate-900 shadow-xs transition flex items-center gap-1 text-xs font-bold"
                     >
-                      {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                      {isExpanded ? <ChevronDown className="w-4 h-4 text-emerald-600" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+                      <span className="hidden sm:inline">{isExpanded ? 'Sembunyikan' : 'Tampilkan Detail'}</span>
                     </button>
 
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-mono text-base font-extrabold text-slate-900">{id}</span>
+                        <span className="font-mono text-base font-extrabold text-slate-900 bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-200">{id}</span>
                         {Array.from(new Set(items.map(i => i.website || 'studiobet78'))).map(w => (
                           <span key={w}>{getWebsiteBadge(w)}</span>
                         ))}
                         <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold border border-emerald-200">
-                          {items.length} Postingan
+                          {items.length} Akun
                         </span>
                       </div>
-                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                      <div className="flex items-center gap-1.5 mt-2 flex-wrap">
                         {platforms.map(p => (
                           <span key={p}>{getPlatformBadge(p)}</span>
                         ))}
@@ -516,99 +477,98 @@ export const IdReffManager: React.FC<IdReffManagerProps> = ({
                     </div>
                   </div>
 
-                  {/* ID Action Buttons (Edit & Delete ID REFF) */}
+                  {/* ID Action Buttons (Edit ID REFF) */}
                   <div className="flex items-center gap-2 self-end sm:self-auto">
                     <button
                       onClick={() => {
                         setEditingOldId(id);
                         setEditingNewId(id);
                       }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold transition"
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold transition shadow-2xs"
                       title="Ubah nama ID REFF ini"
                     >
                       <Edit3 className="w-3.5 h-3.5 text-amber-600" />
-                      <span>Edit ID</span>
-                    </button>
-
-                    <button
-                      onClick={() => setDeletingId(id)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 text-xs font-bold transition"
-                      title="Hapus ID REFF ini"
-                    >
-                      <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                      <span>Hapus ID</span>
+                      <span>Edit ID REFF</span>
                     </button>
                   </div>
 
                 </div>
 
-                {/* Sub-Table of Postings for this ID REFF */}
+                {/* Sub-List / Cards of Postings for this ID REFF */}
                 {isExpanded && (
-                  <div className="p-4 overflow-x-auto">
-                    <h4 className="text-xs font-extrabold text-slate-500 uppercase tracking-wider mb-2 px-1">
-                      Daftar Postingan Konten untuk ID: <span className="text-slate-900 font-mono">{id}</span>
-                    </h4>
+                  <div className="p-4 sm:p-5 bg-slate-50/30 space-y-3">
+                    <div className="flex items-center justify-between px-1">
+                      <h4 className="text-xs font-extrabold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                        <Tag className="w-4 h-4 text-emerald-600" />
+                        Daftar Konten Akun ({items.length}) untuk ID: <span className="text-slate-900 font-mono text-xs font-bold">{id}</span>
+                      </h4>
+                    </div>
 
                     {items.length === 0 ? (
-                      <p className="text-xs text-slate-400 p-3 italic">Belum ada postingan terdaftar.</p>
+                      <p className="text-xs text-slate-400 p-4 italic bg-white rounded-2xl border border-slate-200">Belum ada akun terdaftar untuk ID REFF ini.</p>
                     ) : (
-                      <table className="w-full text-left border-collapse">
-                        <thead>
-                          <tr className="bg-slate-50 text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200">
-                            <th className="py-2.5 px-3">Konten</th>
-                            <th className="py-2.5 px-3">Platform</th>
-                            <th className="py-2.5 px-3">Status</th>
-                            <th className="py-2.5 px-3">Tanggal</th>
-                            <th className="py-2.5 px-3">Link / Catatan</th>
-                            <th className="py-2.5 px-3 text-right">Aksi</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 text-xs">
-                          {items.map(item => (
-                            <tr key={item.id} className="hover:bg-slate-50/80 transition">
-                              <td className="py-2.5 px-3 font-bold text-slate-900">
-                                {item.konten}
-                              </td>
-                              <td className="py-2.5 px-3">
-                                {getPlatformBadge(item.platform)}
-                              </td>
-                              <td className="py-2.5 px-3 font-semibold text-slate-700">
-                                {item.status}
-                              </td>
-                              <td className="py-2.5 px-3 font-mono text-slate-600">
-                                {item.tanggalPostingan || '-'}
-                              </td>
-                              <td className="py-2.5 px-3 max-w-xs truncate text-slate-600">
-                                <span className="truncate block font-medium">{item.catatan || '-'}</span>
+                      <div className="space-y-3">
+                        {items.map(item => (
+                          <div key={item.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs hover:border-emerald-300 transition flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                            
+                            {/* Details Column */}
+                            <div className="space-y-2 flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-sm font-extrabold text-slate-900 bg-slate-100 px-2.5 py-0.5 rounded-lg border border-slate-200">
+                                  {item.konten || 'BRANDING'}
+                                </span>
+                                {getPlatformBadge(item.platform || 'INSTAGRAM')}
+                                {getWebsiteBadge(item.website)}
+                                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                                  item.status === 'Dipublikasikan' 
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                                    : 'bg-amber-50 text-amber-700 border-amber-200'
+                                }`}>
+                                  {item.status || 'Dipublikasikan'}
+                                </span>
+                                {item.tanggalPostingan && (
+                                  <span className="text-[11px] font-mono font-medium text-slate-500 bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
+                                    📅 {item.tanggalPostingan}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Notes & Link */}
+                              <div className="space-y-1">
+                                {item.catatan && (
+                                  <p className="text-xs text-slate-700 font-medium leading-relaxed">
+                                    <strong className="text-slate-900">Catatan:</strong> {item.catatan}
+                                  </p>
+                                )}
                                 {item.linkKonten && (
-                                  <a href={item.linkKonten} target="_blank" rel="noreferrer" className="text-[11px] text-cyan-600 underline flex items-center gap-1 truncate">
-                                    <Link2 className="w-3 h-3" /> {item.linkKonten}
+                                  <a 
+                                    href={item.linkKonten} 
+                                    target="_blank" 
+                                    rel="noreferrer" 
+                                    className="inline-flex items-center gap-1.5 text-xs text-cyan-600 hover:text-cyan-800 font-bold underline truncate max-w-full"
+                                  >
+                                    <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                                    <span className="truncate">{item.linkKonten}</span>
                                   </a>
                                 )}
-                              </td>
-                              <td className="py-2.5 px-3 text-right">
-                                <div className="flex items-center justify-end gap-1">
-                                  <button
-                                    onClick={() => setEditingEntry(item)}
-                                    className="p-1.5 rounded-lg text-amber-700 hover:bg-amber-50 transition"
-                                    title="Edit Postingan"
-                                  >
-                                    <Edit3 className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button
-                                    onClick={() => handleDeleteSingleEntry(item.id)}
-                                    disabled={deletingEntryId === item.id}
-                                    className="p-1.5 rounded-lg text-rose-700 hover:bg-rose-50 transition"
-                                    title="Hapus Postingan"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                              </div>
+                            </div>
+
+                            {/* Action Buttons for this posting entry */}
+                            <div className="flex items-center gap-2 shrink-0 self-end md:self-center border-t md:border-t-0 pt-2 md:pt-0 w-full md:w-auto justify-end">
+                              <button
+                                onClick={() => setEditingEntry(item)}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold transition"
+                                title="Edit Akun"
+                              >
+                                <Edit3 className="w-3.5 h-3.5 text-amber-600" />
+                                <span>Edit Akun</span>
+                              </button>
+                            </div>
+
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
                 )}
@@ -634,7 +594,7 @@ export const IdReffManager: React.FC<IdReffManagerProps> = ({
             </div>
 
             <p className="text-xs text-slate-600 leading-relaxed">
-              Mengubah nama ID REFF dari <strong className="font-mono text-slate-900 bg-slate-100 px-1.5 py-0.5 rounded">{editingOldId}</strong> akan otomatis memperbarui seluruh data postingan yang terkait dengannya.
+              Mengubah nama ID REFF dari <strong className="font-mono text-slate-900 bg-slate-100 px-1.5 py-0.5 rounded">{editingOldId}</strong> akan otomatis memperbarui seluruh data akun yang terkait dengannya.
             </p>
 
             <div className="space-y-1">
@@ -669,43 +629,6 @@ export const IdReffManager: React.FC<IdReffManagerProps> = ({
         </div>
       )}
 
-      {/* Modal Confirm Delete ID REFF */}
-      {deletingId && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            
-            <div className="flex items-center gap-3 text-rose-600 border-b border-slate-100 pb-3">
-              <div className="p-2.5 rounded-2xl bg-rose-100">
-                <AlertTriangle className="w-6 h-6 text-rose-600" />
-              </div>
-              <h3 className="font-extrabold text-slate-900 text-base">Hapus ID REFF?</h3>
-            </div>
-
-            <p className="text-xs text-slate-600 leading-relaxed">
-              Apakah Anda yakin ingin menghapus ID REFF <strong className="font-mono text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded">{deletingId}</strong> beserta seluruh data postingannya? Tindakan ini tidak dapat dibatalkan.
-            </p>
-
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                onClick={() => setDeletingId(null)}
-                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs"
-              >
-                Batal
-              </button>
-              <button
-                onClick={handleConfirmDeleteIdReff}
-                disabled={isDeletingId}
-                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-md transition flex items-center gap-1.5"
-              >
-                <Trash2 className="w-4 h-4" />
-                <span>{isDeletingId ? 'Menghapus...' : 'Ya, Hapus ID & Data'}</span>
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
-
       {/* Modal Edit Single Document Entry */}
       {editingEntry && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -713,7 +636,7 @@ export const IdReffManager: React.FC<IdReffManagerProps> = ({
             
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
-                <Edit3 className="w-5 h-5 text-emerald-600" /> Edit Data Postingan
+                <Edit3 className="w-5 h-5 text-emerald-600" /> Edit Data Akun
               </h3>
               <button onClick={() => setEditingEntry(null)} className="p-1 rounded-lg text-slate-400 hover:text-slate-600">
                 <X className="w-5 h-5" />
@@ -743,11 +666,8 @@ export const IdReffManager: React.FC<IdReffManagerProps> = ({
                   >
                     <option value="INSTAGRAM">INSTAGRAM</option>
                     <option value="TIKTOK">TIKTOK</option>
-                    <option value="YOUTUBE">YOUTUBE</option>
-                    <option value="FACEBOOK">FACEBOOK</option>
-                    <option value="X / TWITTER">X / TWITTER</option>
-                    <option value="THREADS">THREADS</option>
-                    <option value="OTHER">OTHER</option>
+                    <option value="FANSPAGE FB">FANSPAGE FB</option>
+                    <option value="FACEBOOK PRO">FACEBOOK PRO</option>
                   </select>
                 </div>
 
@@ -759,12 +679,7 @@ export const IdReffManager: React.FC<IdReffManagerProps> = ({
                     className="w-full px-3 py-2 rounded-xl border border-slate-300 font-bold text-slate-900 focus:border-emerald-500 outline-none"
                   >
                     <option value="BRANDING">BRANDING</option>
-                    <option value="PROMOSI">PROMOSI</option>
-                    <option value="ENDORSEMENT">ENDORSEMENT</option>
-                    <option value="EDUKASI">EDUKASI</option>
-                    <option value="ENTERTAINMENT">ENTERTAINMENT</option>
-                    <option value="ORGANIC">ORGANIC</option>
-                    <option value="REVIEW">REVIEW</option>
+                    <option value="OVERLAY">OVERLAY</option>
                   </select>
                 </div>
 
@@ -776,17 +691,14 @@ export const IdReffManager: React.FC<IdReffManagerProps> = ({
                     className="w-full px-3 py-2 rounded-xl border border-slate-300 font-bold text-slate-900 focus:border-emerald-500 outline-none"
                   >
                     <option value="Dipublikasikan">Dipublikasikan</option>
-                    <option value="Pending">Pending</option>
-                    <option value="Scheduled">Scheduled / Terjadwal</option>
-                    <option value="Draft">Draft</option>
-                    <option value="Gagal">Gagal</option>
+                    <option value="Ditangguhkan">Ditangguhkan</option>
                   </select>
                 </div>
 
               </div>
 
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Tanggal Postingan</label>
+                <label className="font-bold text-slate-700 block mb-1">Tanggal Akun</label>
                 <input
                   type="text"
                   value={editingEntry.tanggalPostingan}
@@ -797,7 +709,7 @@ export const IdReffManager: React.FC<IdReffManagerProps> = ({
               </div>
 
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Link Konten</label>
+                <label className="font-bold text-slate-700 block mb-1">Link Profil</label>
                 <input
                   type="url"
                   value={editingEntry.linkKonten}
@@ -832,7 +744,7 @@ export const IdReffManager: React.FC<IdReffManagerProps> = ({
                 className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition flex items-center gap-1.5"
               >
                 <Save className="w-4 h-4" />
-                <span>{isSavingEntry ? 'Menyimpan...' : 'Simpan Postingan'}</span>
+                <span>{isSavingEntry ? 'Menyimpan...' : 'Simpan Akun'}</span>
               </button>
             </div>
 
