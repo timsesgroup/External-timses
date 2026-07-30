@@ -7,10 +7,12 @@ import {
   loadLocalEntries,
   saveLocalEntries,
   appendToGoogleSheet,
+  updateGoogleSheetRow,
+  deleteGoogleSheetRow,
   fetchGoogleSheetRows,
   sendNotificationEmail
-} from './server/googleServices';
-import { DocumentEntry, FormSubmissionPayload, AppSettings, DashboardSummary, DailyStat, DistributionStat } from './src/types';
+} from './server/googleServices.ts';
+import type { DocumentEntry, FormSubmissionPayload, AppSettings, DashboardSummary, DailyStat, DistributionStat } from './src/types.ts';
 
 const SETTINGS_FILE = path.join(process.cwd(), 'app_settings.json');
 
@@ -20,8 +22,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   appsScriptUrl: '',
   defaultNotificationEmail: 'geminitimses@gmail.com',
   enableAutoEmail: true,
-  emailSubjectTemplate: '[Ex TIMSES] Postingan Konten Baru: {title} ({category})',
-  emailBodyTemplate: 'Notifikasi otomatis postingan konten.',
+  emailSubjectTemplate: '[Ex TIMSES] Akun Baru: {title} ({category})',
+  emailBodyTemplate: 'Notifikasi otomatis akun.',
   autoSyncToSheet: true,
   senderName: 'Ex TIMSES'
 };
@@ -102,14 +104,14 @@ async function startServer() {
   app.post('/api/documents/sync-sheet', async (req, res) => {
     try {
       const result = await fetchGoogleSheetRows(settings.spreadsheetId);
-      if (result.success && result.entries && result.entries.length > 0) {
+      if (result.success && result.entries) {
         entries = result.entries;
         saveLocalEntries(entries);
-        return res.json({ success: true, count: entries.length, entries, message: `Berhasil menyinkronkan ${entries.length} data postingan sama persis dari Google Sheets.` });
+        return res.json({ success: true, count: entries.length, entries, message: `Berhasil menyinkronkan ${entries.length} data akun sama persis dari Google Sheets.` });
       } else {
         return res.json({
           success: false,
-          message: result.error || 'Tidak ada data ditemukan di Google Sheet atau kueri gagal.',
+          message: result.error || 'Gagal sinkronisasi data dari Google Sheet.',
           entries
         });
       }
@@ -163,83 +165,90 @@ async function startServer() {
         emailSent: false
       };
 
-      let sheetSyncResult: { success: boolean; error?: string; rowNumber?: number } = { success: false, error: '', rowNumber: undefined };
-      let emailResult: { success: boolean; error?: string } = { success: false, error: '' };
-
-      // 1. Direct Google Sheets Sync via OAuth API
-      if (settings.autoSyncToSheet && settings.spreadsheetId) {
-        sheetSyncResult = await appendToGoogleSheet(settings.spreadsheetId, newEntry);
-        if (sheetSyncResult.success) {
-          newEntry.syncedToSheet = true;
-        }
-      }
-
-      // 2. Google Apps Script Web App Sync (Backup / Secondary Engine)
-      if (settings.appsScriptUrl) {
-        try {
-          const fetchRes = await fetch(settings.appsScriptUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'submitDocument',
-              document: newEntry,
-              sendEmail: settings.enableAutoEmail,
-              recipientEmail: newEntry.notificationEmail
-            })
-          });
-          
-          const gasText = await fetchRes.text().catch(() => '');
-          let gasJson: any = null;
-          try {
-            gasJson = JSON.parse(gasText);
-          } catch (e) {
-            // Not JSON
-          }
-
-          if (fetchRes.ok || (gasJson && gasJson.status === 'success')) {
-            newEntry.syncedViaAppsScript = true;
-            newEntry.syncedToSheet = true;
-            if (gasJson?.row) {
-              sheetSyncResult.rowNumber = gasJson.row;
-            }
-            if (gasJson?.emailSent) {
-              newEntry.emailSent = true;
-            }
-          } else {
-            console.warn('[Apps Script Proxy] Non-ok response:', fetchRes.status, gasText);
-          }
-        } catch (gasErr: any) {
-          console.warn('[Apps Script Proxy] Error connecting to Apps Script URL:', gasErr.message);
-        }
-      }
-
-      // 3. Automated Email Notification via Gmail API (if not already sent via Apps Script)
-      if (settings.enableAutoEmail && newEntry.notificationEmail && !newEntry.emailSent) {
-        emailResult = await sendNotificationEmail(newEntry.notificationEmail, newEntry, settings);
-        if (emailResult.success) {
-          newEntry.emailSent = true;
-        }
-      }
-
-      // Save to local list
+      // Save to local list immediately
       entries.unshift(newEntry);
       saveLocalEntries(entries);
 
+      // Respond immediately to UI
       res.json({
         success: true,
-        message: 'Konten berhasil tersimpan & dicatat ke Google Sheets!',
-        entry: newEntry,
-        sheetSynced: newEntry.syncedToSheet,
-        sheetRow: sheetSyncResult.rowNumber,
-        emailSent: newEntry.emailSent,
-        errors: {
-          sheetError: sheetSyncResult.error,
-          emailError: emailResult.error
-        }
+        message: 'Konten berhasil tersimpan! Proses sinkronisasi berjalan di latar belakang.',
+        entry: newEntry
       });
+
+      // Background Processing (Google Sheets, Apps Script, Email)
+      (async () => {
+        let sheetSyncResult: { success: boolean; error?: string; rowNumber?: number } = { success: false, error: '', rowNumber: undefined };
+        let emailResult: { success: boolean; error?: string } = { success: false, error: '' };
+
+        // 1. Direct Google Sheets Sync via OAuth API
+        if (settings.autoSyncToSheet && settings.spreadsheetId) {
+          sheetSyncResult = await appendToGoogleSheet(settings.spreadsheetId, newEntry);
+          if (sheetSyncResult.success) {
+            newEntry.syncedToSheet = true;
+            if (sheetSyncResult.rowNumber) {
+              newEntry.sheetRow = sheetSyncResult.rowNumber;
+            }
+          }
+        }
+
+        // 2. Google Apps Script Web App Sync (Backup / Secondary Engine)
+        if (settings.appsScriptUrl) {
+          try {
+            const fetchRes = await fetch(settings.appsScriptUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'submitDocument',
+                document: newEntry,
+                sendEmail: settings.enableAutoEmail,
+                recipientEmail: newEntry.notificationEmail
+              })
+            });
+            
+            const gasText = await fetchRes.text().catch(() => '');
+            let gasJson: any = null;
+            try {
+              gasJson = JSON.parse(gasText);
+            } catch (e) {
+              // Not JSON
+            }
+
+            if (fetchRes.ok || (gasJson && gasJson.status === 'success')) {
+              newEntry.syncedViaAppsScript = true;
+              newEntry.syncedToSheet = true;
+              if (gasJson?.row) {
+                sheetSyncResult.rowNumber = gasJson.row;
+              }
+              if (gasJson?.emailSent) {
+                newEntry.emailSent = true;
+              }
+            } else {
+              console.warn('[Apps Script Proxy] Non-ok response:', fetchRes.status, gasText);
+            }
+          } catch (gasErr: any) {
+            console.warn('[Apps Script Proxy] Error connecting to Apps Script URL:', gasErr.message);
+          }
+        }
+
+        // 3. Automated Email Notification via Gmail API (if not already sent via Apps Script)
+        if (settings.enableAutoEmail && newEntry.notificationEmail && !newEntry.emailSent) {
+          emailResult = await sendNotificationEmail(newEntry.notificationEmail, newEntry, settings);
+          if (emailResult.success) {
+            newEntry.emailSent = true;
+          }
+        }
+
+        // Update entry with sync results in background
+        const index = entries.findIndex(e => e.id === newEntry.id);
+        if (index !== -1) {
+          entries[index] = newEntry;
+          saveLocalEntries(entries);
+        }
+      })();
     } catch (err: any) {
       console.error('Error submitting document:', err);
-      res.status(500).json({ success: false, error: err.message || 'Gagal memproses data postingan.' });
+      res.status(500).json({ success: false, error: err.message || 'Gagal memproses data akun.' });
     }
   });
 
@@ -252,13 +261,87 @@ async function startServer() {
         return res.status(404).json({ success: false, message: 'Dokumen tidak ditemukan.' });
       }
 
-      const updated = { ...entries[index], ...req.body };
+      const oldEntry = entries[index];
+      const updated: DocumentEntry = { 
+        ...oldEntry, 
+        ...req.body,
+        sheetRow: (req.body.sheetRow ? parseInt(String(req.body.sheetRow), 10) : undefined) || oldEntry.sheetRow,
+        title: `${req.body.konten || oldEntry.konten} - ${req.body.platform || oldEntry.platform} (${req.body.idReff || oldEntry.idReff})`,
+        category: req.body.konten || oldEntry.konten,
+        refNumber: req.body.idReff || oldEntry.idReff,
+        submitter: req.body.idReff || oldEntry.idReff,
+        recipient: req.body.platform || oldEntry.platform,
+        docDate: req.body.tanggalPostingan || oldEntry.tanggalPostingan,
+        notes: req.body.catatan || oldEntry.catatan,
+        attachmentUrl: req.body.linkKonten || oldEntry.linkKonten
+      };
+
       entries[index] = updated;
       saveLocalEntries(entries);
 
-      res.json({ success: true, message: 'Data postingan berhasil diperbarui!', entry: updated, entries });
+      // Sync to Google Sheets and Apps Script in the background
+      (async () => {
+        if (settings.autoSyncToSheet && settings.spreadsheetId) {
+          try {
+            if (oldEntry && oldEntry.website !== updated.website) {
+              await deleteGoogleSheetRow(settings.spreadsheetId, oldEntry);
+              const appendRes = await appendToGoogleSheet(settings.spreadsheetId, updated);
+              if (appendRes.rowNumber) {
+                updated.sheetRow = appendRes.rowNumber;
+                entries[index] = updated;
+                saveLocalEntries(entries);
+              }
+            } else {
+              const updateRes = await updateGoogleSheetRow(settings.spreadsheetId, updated, oldEntry);
+              if (updateRes.rowNumber) {
+                updated.sheetRow = updateRes.rowNumber;
+                entries[index] = updated;
+                saveLocalEntries(entries);
+              }
+            }
+          } catch (e: any) {
+            console.warn('[Sheet Update Warning]:', e.message);
+          }
+        }
+
+        if (settings.appsScriptUrl) {
+          try {
+            if (oldEntry && oldEntry.website !== updated.website) {
+              await fetch(settings.appsScriptUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'deleteDocument', document: oldEntry })
+              });
+              await fetch(settings.appsScriptUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'submitDocument', document: updated })
+              });
+            } else {
+              await fetch(settings.appsScriptUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  action: 'updateDocument',
+                  document: updated,
+                  oldDocument: oldEntry
+                })
+              });
+            }
+          } catch (gasErr: any) {
+            console.warn('[Apps Script Update Warning]:', gasErr.message);
+          }
+        }
+      })();
+
+      res.json({
+        success: true,
+        message: 'Data akun berhasil diperbarui!',
+        entry: updated,
+        entries
+      });
     } catch (err: any) {
-      res.status(500).json({ success: false, message: err.message || 'Gagal memperbarui postingan.' });
+      res.status(500).json({ success: false, message: err.message || 'Gagal memperbarui akun.' });
     }
   });
 
@@ -266,12 +349,55 @@ async function startServer() {
   app.delete('/api/documents/:id', async (req, res) => {
     try {
       const { id } = req.params;
+      const targetEntry = entries.find(e => e.id === id);
+
+      if (!targetEntry) {
+        return res.status(404).json({ success: false, message: 'Akun tidak ditemukan.' });
+      }
+
+      // 1. Immediately remove from local entries
       entries = entries.filter(e => e.id !== id);
       saveLocalEntries(entries);
 
-      res.json({ success: true, message: 'Data postingan berhasil dihapus!', entries });
+      // 2 & 3. Sync to Google Sheet and Apps Script in the background
+      (async () => {
+        let sheetWarning = '';
+        if (settings.spreadsheetId) {
+          try {
+            const sheetResult = await deleteGoogleSheetRow(settings.spreadsheetId, targetEntry);
+            if (!sheetResult.success || sheetResult.error) {
+              sheetWarning = sheetResult.error || 'Data di Google Sheet mungkin tidak terhapus.';
+              console.warn('[Google Sheet Delete Warning]:', sheetWarning);
+            }
+          } catch (err: any) {
+            sheetWarning = err?.message || 'Gagal menghapus data di Google Sheet.';
+            console.warn('[Google Sheet Delete Exception]:', sheetWarning);
+          }
+        }
+
+        if (settings.appsScriptUrl) {
+          try {
+            await fetch(settings.appsScriptUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'deleteDocument',
+                document: targetEntry
+              })
+            });
+          } catch (gasErr: any) {
+            console.warn('[Apps Script Delete Warning]:', gasErr.message);
+          }
+        }
+      })();
+
+      return res.json({
+        success: true,
+        message: `Akun "${targetEntry.konten} - ${targetEntry.platform} (${targetEntry.idReff})" berhasil dihapus!`,
+        entries
+      });
     } catch (err: any) {
-      res.status(500).json({ success: false, message: err.message || 'Gagal menghapus postingan.' });
+      return res.status(500).json({ success: false, message: err.message || 'Gagal menghapus akun.' });
     }
   });
 
@@ -354,7 +480,7 @@ async function startServer() {
 
       res.json({
         success: true,
-        message: `Berhasil mengubah ID REFF dari "${oldId}" menjadi "${cleanNewId}" pada ${updatedCount} postingan!`,
+        message: `Berhasil mengubah ID REFF dari "${oldId}" menjadi "${cleanNewId}" pada ${updatedCount} akun!`,
         entries
       });
     } catch (err: any) {
@@ -374,7 +500,7 @@ async function startServer() {
 
       res.json({
         success: true,
-        message: `Berhasil menghapus ID REFF "${idReff}" beserta ${deletedCount} data postingannya!`,
+        message: `Berhasil menghapus ID REFF "${idReff}" beserta ${deletedCount} data akunnya!`,
         entries
       });
     } catch (err: any) {
@@ -514,13 +640,11 @@ async function startServer() {
 
   // GET Apps Script Code generator
   app.get('/api/apps-script-code', (req, res) => {
-    const code = `/**
- * ====================================================================
- * DOCUSHEET SAAS - GOOGLE APPS SCRIPT REAL-TIME INTEGRATION & EMAIL NOTIFICATION
- * ====================================================================
- * Skrip ini dipasang di Google Sheets (Extensions -> Apps Script).
- * Menyediakan Endpoint Web App untuk input data otomatis & notifikasi email.
- */
+    const code = `// ====================================================================
+// DOCUSHEET SAAS - GOOGLE APPS SCRIPT REAL-TIME INTEGRATION
+// ====================================================================
+// Skrip ini dipasang di Google Sheets (Extensions -> Apps Script).
+// Menyediakan Endpoint Web App untuk input data otomatis & notifikasi.
 
 const SHEET_NAME = "${settings.sheetName || 'Sheet1'}";
 const NOTIFICATION_EMAIL = "${settings.defaultNotificationEmail || 'geminitimses@gmail.com'}";
@@ -531,7 +655,8 @@ function doPost(e) {
     const doc = data.document || data;
     
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    let sheet = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
+    let targetSheetName = doc.website || SHEET_NAME;
+    let sheet = ss.getSheetByName(targetSheetName) || ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
     
     // Buat Header jika sheet kosong (7 Kolom)
     if (sheet.getLastRow() === 0) {
@@ -540,8 +665,8 @@ function doPost(e) {
         'PLATFORM',
         'ID REFF',
         'Status',
-        'Tanggal postingan',
-        'LINK KONTEN',
+        'Tanggal akun',
+        'LINK PROFIL',
         'CATATAN'
       ]);
       sheet.getRange(1, 1, 1, 7).setFontWeight('bold').setBackground('#f1f5f9');
@@ -557,6 +682,102 @@ function doPost(e) {
       doc.catatan || doc.notes || ''
     ];
     
+    // Jika action updateDocument atau deleteDocument: Cari baris yang sesuai secara presisi
+    if (data.action === 'updateDocument' || data.action === 'deleteDocument') {
+      const dataRows = sheet.getDataRange().getValues();
+      const searchDoc = data.oldDocument || doc || {};
+      const targetSheetRow = searchDoc.sheetRow || doc.sheetRow || data.sheetRow;
+      
+      let foundRow = -1;
+
+      // 1. Target langsung menggunakan sheetRow jika tersedia (1-based index)
+      const targetRowParsed = parseInt(String(targetSheetRow), 10);
+      if (targetRowParsed && !isNaN(targetRowParsed) && targetRowParsed > 1) {
+        foundRow = targetRowParsed;
+      }
+
+      // 2. Jika belum ketemu, cari pencocokan dengan skor presisi
+      if (foundRow === -1) {
+        const targetIdReff = (searchDoc.idReff || searchDoc.submitter || '-').toString().trim().toLowerCase();
+        const targetPlatform = (searchDoc.platform || searchDoc.recipient || 'INSTAGRAM').toString().trim().toLowerCase();
+        const targetKonten = (searchDoc.konten || searchDoc.category || 'BRANDING').toString().trim().toLowerCase();
+        const targetTanggal = (searchDoc.tanggalPostingan || searchDoc.docDate || '').toString().trim().toLowerCase();
+        const targetLink = (searchDoc.linkKonten || searchDoc.attachmentUrl || '').toString().trim().toLowerCase();
+        const targetCatatan = (searchDoc.catatan || searchDoc.notes || '').toString().trim().toLowerCase();
+
+        let highestScore = 0;
+
+        for (let i = 1; i < dataRows.length; i++) {
+          const row = dataRows[i];
+          if (!row || row.length === 0) continue;
+
+          const rKonten = (row[0] || '').toString().trim().toLowerCase();
+          const rPlatform = (row[1] || '').toString().trim().toLowerCase();
+          const rIdReff = (row[2] || '').toString().trim().toLowerCase();
+          const rTanggal = (row[4] || '').toString().trim().toLowerCase();
+          const rLink = (row[5] || '').toString().trim().toLowerCase();
+          const rCatatan = (row[6] || '').toString().trim().toLowerCase();
+
+          if (!rKonten && !rPlatform && !rIdReff && !rLink && !rCatatan) continue;
+
+          let score = 0;
+
+          if (targetLink && rLink) {
+            if (rLink === targetLink) score += 50;
+            else if (targetLink.indexOf(rLink) !== -1 || rLink.indexOf(targetLink) !== -1) score += 40;
+          }
+
+          if (targetIdReff && targetIdReff !== '-' && rIdReff === targetIdReff) {
+            score += 20;
+          } else if (targetIdReff && targetIdReff !== '-' && rIdReff !== targetIdReff) {
+            score -= 30;
+          }
+
+          if (targetCatatan && rCatatan) {
+            if (rCatatan === targetCatatan) score += 20;
+            else if (targetCatatan.indexOf(rCatatan) !== -1 || rCatatan.indexOf(targetCatatan) !== -1) score += 15;
+          }
+
+          if (targetTanggal && rTanggal && rTanggal === targetTanggal) score += 10;
+          if (targetPlatform && rPlatform === targetPlatform) score += 5;
+          if (targetKonten && rKonten === targetKonten) score += 5;
+
+          if (targetSheetRow && typeof targetSheetRow === 'number') {
+            const distance = Math.abs((i + 1) - targetSheetRow);
+            score += Math.max(0, 25 - distance);
+          }
+
+          if (score > highestScore && score >= 15) {
+            highestScore = score;
+            foundRow = i + 1;
+          }
+        }
+      }
+      
+      if (foundRow > 0) {
+        if (data.action === 'deleteDocument') {
+          sheet.getRange(foundRow, 1, 1, 7).clearContent();
+          return ContentService.createTextOutput(JSON.stringify({
+            status: "success",
+            message: "Data akun berhasil dikosongkan pada baris " + foundRow
+          })).setMimeType(ContentService.MimeType.JSON);
+        } else {
+          sheet.getRange(foundRow, 1, 1, 7).setValues([rowValues]);
+          return ContentService.createTextOutput(JSON.stringify({
+            status: "success",
+            message: "Data akun berhasil diperbarui pada baris " + foundRow,
+            row: foundRow
+          })).setMimeType(ContentService.MimeType.JSON);
+        }
+      } else if (data.action === 'deleteDocument') {
+        return ContentService.createTextOutput(JSON.stringify({
+          status: "success",
+          message: "Data akun tidak ditemukan di sheet untuk dihapus."
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+      // Jika updateDocument tapi tidak ketemu, akan lanjut ke insert row (di bawah)
+    }
+
     sheet.appendRow(rowValues);
     const newRowIndex = sheet.getLastRow();
     
@@ -565,15 +786,15 @@ function doPost(e) {
     const targetEmail = doc.notificationEmail || NOTIFICATION_EMAIL;
     if (targetEmail && data.sendEmail !== false) {
       try {
-        const subject = "[Ex TIMSES] Postingan Konten: " + (doc.konten || 'BRANDING') + " (" + (doc.platform || 'INSTAGRAM') + ")";
-        const body = "Halo,\\n\\nData postingan konten baru berhasil diinput via Web SaaS:\\n\\n" +
-          "• Konten: " + (doc.konten || '-') + "\\n" +
-          "• Platform: " + (doc.platform || '-') + "\\n" +
-          "• ID REFF: " + (doc.idReff || '-') + "\\n" +
-          "• Status: " + (doc.status || 'Dipublikasikan') + "\\n" +
-          "• Tanggal: " + (doc.tanggalPostingan || '-') + "\\n" +
-          "• Link: " + (doc.linkKonten || '-') + "\\n" +
-          "• Baris Google Sheet: " + newRowIndex + "\\n\\n" +
+        const subject = "[Ex TIMSES] Akun: " + (doc.konten || 'BRANDING') + " (" + (doc.platform || 'INSTAGRAM') + ")";
+        const body = "Halo,\\n\\nData akun baru berhasil diinput via Web SaaS:\\n\\n" +
+          "- Konten: " + (doc.konten || '-') + "\\n" +
+          "- Platform: " + (doc.platform || '-') + "\\n" +
+          "- ID REFF: " + (doc.idReff || '-') + "\\n" +
+          "- Status: " + (doc.status || 'Dipublikasikan') + "\\n" +
+          "- Tanggal: " + (doc.tanggalPostingan || '-') + "\\n" +
+          "- Link: " + (doc.linkKonten || '-') + "\\n" +
+          "- Baris Google Sheet: " + newRowIndex + "\\n\\n" +
           "Silakan buka Google Sheet Anda untuk memeriksa detail selengkapnya.";
           
         MailApp.sendEmail(targetEmail, subject, body);
@@ -585,7 +806,7 @@ function doPost(e) {
     
     return ContentService.createTextOutput(JSON.stringify({
       status: "success",
-      message: "Data postingan berhasil disimpan ke Google Sheet!",
+      message: "Data akun berhasil disimpan ke Google Sheet!",
       row: newRowIndex,
       emailSent: emailSent
     })).setMimeType(ContentService.MimeType.JSON);
@@ -599,7 +820,7 @@ function doPost(e) {
 }
 
 function doGet(e) {
-  return ContentService.createTextOutput("Ex TIMSES Google Apps Script Web App Aktif & Siap Menerima Data Postingan!");
+  return ContentService.createTextOutput("Ex TIMSES Google Apps Script Web App Aktif & Siap Menerima Data Akun!");
 }
 `;
     res.json({ success: true, code });
