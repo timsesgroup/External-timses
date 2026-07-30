@@ -4,21 +4,22 @@ import { BottomNav, TabType } from './components/BottomNav';
 import { DocumentForm } from './components/DocumentForm';
 import { AnalyticsDashboard } from './components/AnalyticsDashboard';
 import { DocumentList } from './components/DocumentList';
-import { IdReffManager } from './components/IdReffManager';
 import { AppsScriptStudio } from './components/AppsScriptStudio';
+import { SettingsModal } from './components/SettingsModal';
 import { DocumentEntry, AppSettings, DashboardSummary, SyncResponse } from './types';
-import { CheckCircle2, AlertCircle, X, Sparkles } from 'lucide-react';
+import { CheckCircle2, AlertCircle, X } from 'lucide-react';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<TabType>('form');
+  const [activeTab, setActiveTab] = useState<TabType>('dashboard');
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<AppSettings>({
     spreadsheetId: '1YOdn-LDDYayVTqhb2KeXJ2OPnZdwhi4mrDZRKeK_FtY',
     sheetName: 'Sheet1',
     appsScriptUrl: '',
     defaultNotificationEmail: 'geminitimses@gmail.com',
     enableAutoEmail: true,
-    emailSubjectTemplate: '[Ex TIMSES] Postingan Konten Baru: {title} ({category})',
-    emailBodyTemplate: 'Notifikasi otomatis postingan konten.',
+    emailSubjectTemplate: '[Ex TIMSES] Akun Baru: {title} ({category})',
+    emailBodyTemplate: 'Notifikasi otomatis akun.',
     autoSyncToSheet: true,
     senderName: 'Ex TIMSES'
   });
@@ -92,6 +93,23 @@ export default function App() {
 
   useEffect(() => {
     loadAllData();
+
+    // Auto-sync from Google Sheet every 5 seconds
+    const syncInterval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/documents/sync-sheet', { method: 'POST' });
+        const data = await res.json();
+        if (data.success && data.entries) {
+          setEntries(data.entries);
+        }
+        fetchStats();
+        fetchHealth();
+      } catch (err) {
+        console.debug('5s auto sync tick:', err);
+      }
+    }, 5000);
+
+    return () => clearInterval(syncInterval);
   }, []);
 
   const handleSyncSheet = async () => {
@@ -138,7 +156,7 @@ export default function App() {
     }
   };
 
-  const pendingCount = entries.filter(e => e.status === 'Pending').length;
+  const pendingCount = entries.filter(e => e.status === 'Ditangguhkan').length;
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 font-sans flex flex-col antialiased">
@@ -172,6 +190,7 @@ export default function App() {
         health={health}
         onSyncSheet={handleSyncSheet}
         isSyncing={isSyncing}
+        onOpenSettings={() => setIsSettingsOpen(true)}
       />
 
       {/* Navigation Tabs Bar */}
@@ -179,6 +198,15 @@ export default function App() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         pendingCount={pendingCount}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+      />
+
+      {/* Settings Modal */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        settings={settings}
+        onSaveSettings={handleSaveSettings}
       />
 
       {/* Main Content Area */}
@@ -192,19 +220,10 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'id-manager' && (
-          <IdReffManager
-            entries={entries}
-            settings={settings}
-            selectedWeb={selectedWeb}
-            onRefreshAll={fetchDocuments}
-            showToast={showToast}
-          />
-        )}
-
         {activeTab === 'dashboard' && (
           <AnalyticsDashboard
             summary={dashboardSummary}
+            entries={entries}
             isLoading={isLoading}
             onRefresh={fetchStats}
             onNavigateForm={() => setActiveTab('form')}
@@ -230,12 +249,12 @@ export default function App() {
 
       {/* Footer */}
       <footer className="bg-white border-t border-slate-200 py-4 px-4 text-center text-xs text-slate-500 hidden md:block">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <span>Ex TIMSES &copy; {new Date().getFullYear()} - Web Data Input &amp; Google Apps Script Real-Time Engine</span>
-          <span className="font-mono text-[11px] text-slate-400">Target Sheet: {settings.spreadsheetId}</span>
+        <div className="max-w-7xl mx-auto flex items-center justify-center">
+          <span>Ex TIMSES &copy; {new Date().getFullYear()} - Web Data Input &amp; Real-Time Engine</span>
         </div>
       </footer>
 
     </div>
   );
 }
+

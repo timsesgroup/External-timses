@@ -1,23 +1,14 @@
 export type ContentCategory = 
   | 'BRANDING' 
-  | 'PROMOSI' 
-  | 'ENDORSEMENT' 
-  | 'EDUKASI' 
-  | 'ENTERTAINMENT' 
-  | 'ORGANIC' 
-  | 'REVIEW' 
-  | 'Lainnya';
+  | 'OVERLAY';
 
 export type PlatformType = 
   | 'INSTAGRAM' 
   | 'TIKTOK' 
-  | 'YOUTUBE' 
-  | 'FACEBOOK' 
-  | 'X / TWITTER' 
-  | 'THREADS' 
-  | 'OTHER';
+  | 'FANSPAGE FB' 
+  | 'FACEBOOK PRO';
 
-export type PostStatus = 'Dipublikasikan' | 'Pending' | 'Scheduled' | 'Draft' | 'Gagal';
+export type PostStatus = 'Dipublikasikan' | 'Ditangguhkan';
 
 export interface DocumentEntry {
   id: string;
@@ -48,6 +39,7 @@ export interface DocumentEntry {
   emailSent?: boolean;
   syncedToSheet?: boolean;
   syncedViaAppsScript?: boolean;
+  sheetRow?: number;
 }
 
 export interface AppSettings {
